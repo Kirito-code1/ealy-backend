@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
@@ -17,11 +19,11 @@ app.add_middleware(
 # Подключение к PostgreSQL
 def get_connection():
     return psycopg2.connect(
-        host="127.0.0.1",
-        port=5432,
-        database="EatlyServer",  # твоя база
-        user="shahzod",          # твой пользователь
-        password="2008",         # твой пароль
+        host=os.getenv("PGHOST", "127.0.0.1"),
+        port=os.getenv("PGPORT", 5432),
+        database=os.getenv("PGDATABASE", "EatlyServer"),
+        user=os.getenv("PGUSER", "shahzod"),
+        password=os.getenv("PGPASSWORD", "2008"),
         cursor_factory=RealDictCursor
     )
 
