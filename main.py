@@ -1,39 +1,38 @@
+from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
 import os
+import psycopg
+from psycopg.rows import dict_row  # чтобы получать JSON-словарь
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import psycopg2
-from psycopg2.extras import RealDictCursor
+# Загружаем переменные окружения
+load_dotenv()
 
 app = FastAPI()
 
-# Разрешаем React делать запросы
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # для разработки можно *
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Подключение к PostgreSQL
+# Функция подключения к БД
 def get_connection():
-    return psycopg2.connect(
-        host=os.getenv("PGHOST", "127.0.0.1"),
-        port=os.getenv("PGPORT", 5432),
-        database=os.getenv("PGDATABASE", "EatlyServer"),
-        user=os.getenv("PGUSER", "shahzod"),
-        password=os.getenv("PGPASSWORD", "2008"),
-        cursor_factory=RealDictCursor
+    return psycopg.connect(
+        dbname=os.getenv("POSTGRES_DB"),
+        user=os.getenv("POSTGRES_USER"),
+        password=os.getenv("POSTGRES_PASSWORD"),
+        host=os.getenv("POSTGRES_HOST"),
+        port=os.getenv("POSTGRES_PORT"),
+        row_factory=dict_row  # возвращает словари вместо кортежей
     )
 
-# Эндпоинт для получения всех блюд
+# Тестовый эндпоинт
+@app.get("/ping")
+def ping():
+    return {"message": "pong"}
+
+# Чтение данных из таблицы dishes
 @app.get("/dishes")
 def get_dishes():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, name, price, delivery_time FROM dishes ORDER BY id;")
-    dishes = cur.fetchall()
-    cur.close()
-    conn.close()
-    return dishes
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM dishes;")
+                rows = cur.fetchall()
+                return rows
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
