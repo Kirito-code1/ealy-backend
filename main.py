@@ -5,24 +5,28 @@ import os
 import psycopg
 from psycopg.rows import dict_row
 
+# Загружаем локальные переменные окружения (для локальной разработки)
 load_dotenv()
 
 app = FastAPI()
 
+# Настройка CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
-        "https://eatly-website-frontend.up.railway.app"
+        "http://localhost:5173",  # локальный фронтенд
+        "https://eatly-website-frontend.up.railway.app"  # продакшн фронтенд
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 def get_connection():
-    """Подключение к PostgreSQL"""
+    """
+    Подключение к PostgreSQL.
+    Использует DATABASE_URL на Railway или локальные переменные для разработки.
+    """
     database_url = os.getenv("DATABASE_URL")
 
     if database_url:
@@ -33,7 +37,6 @@ def get_connection():
             else:
                 database_url += "?sslmode=require"
 
-        print(f"Connecting to: {database_url[:60]}...")
         return psycopg.connect(database_url, row_factory=dict_row)
     else:
         # Локальная разработка
@@ -46,16 +49,13 @@ def get_connection():
             row_factory=dict_row
         )
 
-
 @app.get("/")
 def root():
     return {"message": "Eatly API", "status": "running"}
 
-
 @app.get("/ping")
 def ping():
     return {"message": "pong"}
-
 
 @app.get("/env")
 def check_env():
@@ -70,7 +70,6 @@ def check_env():
         "RAILWAY_ENVIRONMENT": os.getenv("RAILWAY_ENVIRONMENT", "not set")
     }
 
-
 @app.get("/db-info")
 def db_info():
     """Информация о подключенной базе данных"""
@@ -83,31 +82,20 @@ def db_info():
 
                 # Список таблиц
                 cur.execute("""
-                            SELECT table_name
-                            FROM information_schema.tables
-                            WHERE table_schema = 'public'
-                            ORDER BY table_name;
-                            """)
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name;
+                """)
                 tables = [row["table_name"] for row in cur.fetchall()]
-
-                # Проверяем таблицу dishes
-                has_dishes = "dishes" in tables
-                dishes_count = 0
-
-                if has_dishes:
-                    cur.execute("SELECT COUNT(*) as cnt FROM dishes;")
-                    dishes_count = cur.fetchone()["cnt"]
 
                 return {
                     "connection": info,
                     "tables": tables,
-                    "total_tables": len(tables),
-                    "has_dishes_table": has_dishes,
-                    "dishes_count": dishes_count
+                    "total_tables": len(tables)
                 }
     except Exception as e:
         return {"error": str(e)}
-
 
 @app.get("/test-connection")
 def test_connection():
@@ -129,76 +117,9 @@ def test_connection():
             "error": str(e)
         }
 
-
-@app.post("/setup-dishes")
-def setup_dishes():
-    """Создать таблицу dishes и добавить тестовые данные"""
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # Проверяем, есть ли уже таблица
-                cur.execute("""
-                            SELECT EXISTS (SELECT
-                                           FROM information_schema.tables
-                                           WHERE table_schema = 'public'
-                                             AND table_name = 'dishes');
-                            """)
-                exists = cur.fetchone()["exists"]
-
-                if exists:
-                    # Таблица уже есть
-                    cur.execute("SELECT COUNT(*) as cnt FROM dishes;")
-                    count = cur.fetchone()["cnt"]
-                    return {
-                        "status": "already_exists",
-                        "message": "Table 'dishes' already exists",
-                        "dishes_count": count
-                    }
-
-                # Создаём таблицу
-                cur.execute("""
-                            CREATE TABLE dishes
-                            (
-                                id          SERIAL PRIMARY KEY,
-                                name        VARCHAR(255)   NOT NULL,
-                                description TEXT,
-                                price       DECIMAL(10, 2) NOT NULL,
-                                category    VARCHAR(100),
-                                image_url   VARCHAR(500),
-                                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                            );
-                            """)
-
-                # Добавляем тестовые данные
-                cur.execute("""
-                            INSERT INTO dishes (name, description, price, category)
-                            VALUES ('Плов', 'Традиционный узбекский плов с бараниной', 120.00, 'Основные блюда'),
-                                   ('Салат Цезарь', 'С курицей, крутонами и соусом Цезарь', 85.50, 'Салаты'),
-                                   ('Пицца Маргарита', 'Классическая итальянская пицца с томатами и моцареллой', 150.00,
-                                    'Пицца'),
-                                   ('Борщ', 'Украинский борщ со сметаной', 90.00, 'Супы'),
-                                   ('Тирамису', 'Итальянский десерт из маскарпоне и кофе', 70.00, 'Десерты');
-                            """)
-
-                conn.commit()
-
-                # Проверяем результат
-                cur.execute("SELECT COUNT(*) as cnt FROM dishes;")
-                count = cur.fetchone()["cnt"]
-
-                return {
-                    "status": "created",
-                    "message": "Table 'dishes' created successfully",
-                    "dishes_added": 5,
-                    "total_dishes": count
-                }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/dishes")
 def get_dishes():
-    """Получить все блюда"""
+    """Получить все блюда из базы (только существующие)"""
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -216,10 +137,9 @@ def get_dishes():
                 "success": True,
                 "count": 0,
                 "dishes": [],
-                "message": "Table 'dishes' does not exist yet. Use POST /setup-dishes to create it."
+                "message": "Table 'dishes' does not exist. Add dishes to your database manually."
             }
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/health")
 def health():
@@ -233,7 +153,6 @@ def health():
             "env": "/env",
             "db_info": "/db-info",
             "test": "/test-connection",
-            "setup_dishes": "POST /setup-dishes",
             "get_dishes": "/dishes"
         }
     }
