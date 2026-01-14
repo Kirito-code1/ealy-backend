@@ -21,6 +21,8 @@ app.add_middleware(
 )
 
 
+
+
 def get_connection():
     """Подключение к PostgreSQL"""
     database_url = os.getenv("DATABASE_URL")
@@ -442,26 +444,86 @@ def add_100_dishes():
 
 @app.get("/dishes")
 def get_dishes():
-    """Получить все блюда"""
+    """Получить все блюда. Если таблица пустая - создаём автоматически."""
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                # Проверяем, есть ли таблица и данные
+                cur.execute("""
+                            SELECT EXISTS (SELECT
+                                           FROM information_schema.tables
+                                           WHERE table_schema = 'public'
+                                             AND table_name = 'dishes');
+                            """)
+                table_exists = cur.fetchone()["exists"]
+
+                if not table_exists:
+                    # Таблицы нет - создаём её
+                    cur.execute("""
+                                CREATE TABLE dishes
+                                (
+                                    id            SERIAL PRIMARY KEY,
+                                    name          VARCHAR(255)   NOT NULL,
+                                    description   TEXT,
+                                    price         DECIMAL(10, 2) NOT NULL,
+                                    category      VARCHAR(100),
+                                    delivery_time INTEGER,
+                                    rating        DECIMAL(3, 1),
+                                    image_url     VARCHAR(500),
+                                    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                );
+                                """)
+
+                # Проверяем, есть ли данные
+                cur.execute("SELECT COUNT(*) as cnt FROM dishes;")
+                count = cur.fetchone()["cnt"]
+
+                if count == 0:
+                    # Данных нет - добавляем 20 популярных блюд автоматически
+                    dishes_data = [
+                        ("Chicken Hell", "Grilled chicken with vegetables", 12.99, "Healthy", 24, 4.8),
+                        ("Salmon Heaven", "Baked salmon with quinoa", 15.99, "Healthy", 28, 4.7),
+                        ("Avocado Toast", "Whole grain toast with avocado", 8.99, "Healthy", 15, 4.5),
+                        ("Cheese Burger", "Classic cheeseburger with fries", 8.99, "Fast Food", 18, 4.6),
+                        ("Margarita Pizza", "Classic tomato and cheese", 11.99, "Pizza", 25, 4.7),
+                        ("Chicken Teriyaki", "Teriyaki chicken with rice", 11.99, "Asian", 22, 4.7),
+                        ("Chocolate Cake", "Rich chocolate cake", 6.99, "Dessert", 15, 4.8),
+                        ("Burrito", "Chicken burrito", 10.99, "Mexican", 22, 4.7),
+                        ("Pancakes", "3 pancakes with syrup", 7.99, "Breakfast", 15, 4.7),
+                        ("Spaghetti Carbonara", "Pasta with bacon and eggs", 12.99, "Italian", 22, 4.7),
+                        ("Greek Salad", "Fresh Greek salad with feta", 9.99, "Healthy", 18, 4.4),
+                        ("French Fries", "Golden crispy fries", 3.99, "Fast Food", 12, 4.5),
+                        ("Sushi Roll", "California roll (8 pcs)", 9.99, "Asian", 20, 4.6),
+                        ("Lasagna", "Meat lasagna", 13.99, "Italian", 30, 4.8),
+                        ("Ice Cream", "3 scoops of ice cream", 5.99, "Dessert", 12, 4.5),
+                        ("Tacos", "3 beef tacos", 9.99, "Mexican", 20, 4.6),
+                        ("Ramen", "Japanese ramen soup", 10.99, "Asian", 24, 4.7),
+                        ("BBQ Bacon Burger", "Burger with bacon and BBQ", 10.99, "Fast Food", 22, 4.8),
+                        ("Tiramisu", "Coffee dessert", 6.99, "Italian", 18, 4.8),
+                        ("Spring Rolls", "Vegetable spring rolls (4 pcs)", 6.99, "Asian", 18, 4.5),
+                    ]
+
+                    for dish in dishes_data:
+                        name, description, price, category, delivery_time, rating = dish
+                        cur.execute("""
+                                    INSERT INTO dishes (name, description, price, category, delivery_time, rating)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                    """, (name, description, price, category, delivery_time, rating))
+
+                    conn.commit()
+                    print(f"✅ Automatically created table and added {len(dishes_data)} dishes")
+
+                # Теперь получаем все блюда
                 cur.execute("SELECT * FROM dishes ORDER BY id;")
                 dishes = cur.fetchall()
+
                 return {
                     "success": True,
                     "count": len(dishes),
-                    "dishes": dishes
+                    "dishes": dishes,
+                    "auto_created": count == 0  # Показывает, были ли данные созданы автоматически
                 }
     except Exception as e:
-        # Если таблицы нет
-        if "does not exist" in str(e) or "dishes" in str(e).lower():
-            return {
-                "success": True,
-                "count": 0,
-                "dishes": [],
-                "message": "Table 'dishes' does not exist. Call POST /setup-dishes to create it."
-            }
         raise HTTPException(status_code=500, detail=str(e))
 
 
