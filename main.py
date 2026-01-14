@@ -1,13 +1,26 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware  # <-- добавляем CORS
 from dotenv import load_dotenv
 import os
 import psycopg
-from psycopg.rows import dict_row  # чтобы получать JSON-словарь
+from psycopg.rows import dict_row
 
 # Загружаем переменные окружения
 load_dotenv()
 
 app = FastAPI()
+
+# === CORS ===
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",                     # твой локальный фронтенд
+        "https://eatly-website-frontend.up.railway.app"  # продакшн фронтенд
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Функция подключения к БД
 def get_connection():
@@ -17,7 +30,7 @@ def get_connection():
         password=os.getenv("POSTGRES_PASSWORD"),
         host=os.getenv("POSTGRES_HOST"),
         port=os.getenv("POSTGRES_PORT"),
-        row_factory=dict_row  # возвращает словари вместо кортежей
+        row_factory=dict_row
     )
 
 # Тестовый эндпоинт
